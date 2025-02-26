@@ -1,188 +1,284 @@
-from tkinter import *
-from tkinter import messagebox
-import importlib.util
-import sys
-from pathlib import Path
+import tkinter as tk
+from tkinter import ttk, messagebox
+import sqlite3
+from datetime import datetime
 
-users = {}  # Dictionary to store user credentials
+def display_content(content_frame):
+    admit_info = AdmitInfo(content_frame)
 
-# Function to import and run main page
-def run_main_page():
-    try:
-        # Get the path to main_page.py
-        main_page_path = Path(__file__).parent / "main_page.py"
+class AdmitInfo:
+    def __init__(self, content_frame):
+        self.content_frame = content_frame
+        self.create_admit_table()
+        self.create_widgets()
         
-        # Import main_page.py dynamically
-        spec = importlib.util.spec_from_file_location("main_page", main_page_path)
-        main_page_module = importlib.util.module_from_spec(spec)
-        sys.modules["main_page"] = main_page_module
-        spec.loader.exec_module(main_page_module)
-        
-        # Hide the login window
-        win.withdraw()
-        
-        # Create a function to show login window when main page is closed
-        def on_main_close():
-            win.deiconify()  # Show login window again
+    def create_admit_table(self):
+        conn = sqlite3.connect('hospital.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admits (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                gender TEXT,
+                phone NUMBER,
+                address TEXT,
+                age NUMBER,
+                disease TEXT,
+                blood_group TEXT,
+                check_in TEXT,
+                room_number TEXT,
+                doctors TEXT,
+                check_out TEXT,
+                price NUMBER
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+    def clear_entries(self):
+        for entry in [self.id_entry, self.name_entry, self.phone_entry, 
+                     self.address_entry, self.age_entry, self.disease_entry,
+                     self.check_in_entry, self.room_number_entry, self.doctors_entry,
+                     self.check_out_entry, self.price_entry]:
+            entry.delete(0, tk.END)
+        self.gender_combo.set('')
+        self.blood_group_combo.set('')
+
+    def add_admit(self):
+        try:
+            conn = sqlite3.connect('hospital.db')
+            cursor = conn.cursor()
             
-        # If main_page has a display_content function, call it
-        if hasattr(main_page_module, 'display_content'):
-            # Create a new window for the main page
-            main_window = Toplevel(win)
-            main_window.protocol("WM_DELETE_WINDOW", on_main_close)  # Handle window close
-            main_page_module.display_content(main_window)
-        else:
-            messagebox.showerror("Error", "Main page module is not properly structured")
-            win.deiconify()  # Show login window if there's an error
+            values = (
+                self.id_entry.get(),
+                self.name_entry.get(),
+                self.gender_combo.get(),
+                self.phone_entry.get(),
+                self.address_entry.get(),
+                self.age_entry.get(),
+                self.disease_entry.get(),
+                self.blood_group_combo.get(),
+                self.check_in_entry.get(),
+                self.room_number_entry.get(),
+                self.doctors_entry.get(),
+                self.check_out_entry.get(),
+                self.price_entry.get()
+            )
             
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to load main page: {str(e)}")
-        win.deiconify()  # Show login window if there's an error
+            if any(not str(value).strip() for value in values):
+                messagebox.showerror("Error", "All fields are required!")
+                return
+                
+            cursor.execute('''
+                INSERT INTO admits (
+                    id, name, gender, phone, address, age,
+                    disease, blood_group, check_in, room_number,
+                    doctors, check_out, price
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', values)
+            
+            conn.commit()
+            conn.close()
+            
+            self.clear_entries()
+            self.display_records()
+            messagebox.showinfo("Success", "Patient admitted successfully!")
+            
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Error", "Admit ID already exists!")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
-# Function to toggle password visibility
-def toggle_password(entry_widget, check_var):
-    if check_var.get():
-        entry_widget.config(show="")
-    else:
-        entry_widget.config(show="*")
+    def update_admit(self):
+        try:
+            if not self.id_entry.get():
+                messagebox.showerror("Error", "Please enter Admit ID!")
+                return
+                
+            conn = sqlite3.connect('hospital.db')
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE admits 
+                SET name=?, gender=?, phone=?, address=?, age=?,
+                    disease=?, blood_group=?, check_in=?, room_number=?,
+                    doctors=?, check_out=?, price=?
+                WHERE id=?
+            ''', (
+                self.name_entry.get(),
+                self.gender_combo.get(),
+                self.phone_entry.get(),
+                self.address_entry.get(),
+                self.age_entry.get(),
+                self.disease_entry.get(),
+                self.blood_group_combo.get(),
+                self.check_in_entry.get(),
+                self.room_number_entry.get(),
+                self.doctors_entry.get(),
+                self.check_out_entry.get(),
+                self.price_entry.get(),
+                self.id_entry.get()
+            ))
+            
+            if cursor.rowcount == 0:
+                messagebox.showerror("Error", "Admit ID not found!")
+            else:
+                conn.commit()
+                self.clear_entries()
+                self.display_records()
+                messagebox.showinfo("Success", "Admit information updated!")
+                
+            conn.close()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
-# Function to check login credentials
-def login():
-    username = entry_username.get()
-    password = entry_password.get()
-    if username in users and users[username] == password:
-        messagebox.showinfo("Login Successful", f"Welcome {username}!")
-        run_main_page()  # Launch main page after successful login
-    else:
-        messagebox.showerror("Error", "Username or Password is incorrect.")
+    def delete_admit(self):
+        if not self.id_entry.get():
+            messagebox.showerror("Error", "Please enter Admit ID!")
+            return
+            
+        if messagebox.askyesno("Confirm", "Are you sure you want to delete this admission?"):
+            try:
+                conn = sqlite3.connect('hospital.db')
+                cursor = conn.cursor()
+                
+                cursor.execute('DELETE FROM admits WHERE id=?', 
+                             (self.id_entry.get(),))
+                
+                if cursor.rowcount == 0:
+                    messagebox.showerror("Error", "Admit ID not found!")
+                else:
+                    conn.commit()
+                    self.clear_entries()
+                    self.display_records()
+                    messagebox.showinfo("Success", "Admission deleted successfully!")
+                    
+                conn.close()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
-# Function to handle signup process
-def signup():
-    fname = entry_fname.get()
-    lname = entry_lname.get()
-    phone = entry_phone.get()
-    username = entry_signup_username.get()
-    password = entry_create_password.get()
-    confirm_password = entry_confirm_password.get()
-    
-    if not (fname and lname and phone and username and password and confirm_password):
-        messagebox.showerror("Error", "All fields are required")
-    elif password != confirm_password:
-        messagebox.showerror("Error", "Passwords do not match")
-    elif username in users:
-        messagebox.showerror("Error", "Username already exists")
-    else:
-        users[username] = password
-        messagebox.showinfo("Success", f"Account created successfully.\nUsername: {username}\nYou can now log in.")
-        show_login_section()
+    def display_records(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
+        conn = sqlite3.connect('hospital.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM admits')
+        records = cursor.fetchall()
+        
+        for record in records:
+            self.tree.insert('', 'end', values=record)
+            
+        conn.close()
 
-# Function to display the selection section
-def show_selection_section(event=None):
-    for widget in win.winfo_children():
-        if isinstance(widget, Frame):
-            widget.destroy()
-    
-    selection_frame = Frame(win, bg="white", bd=5, relief="ridge")
-    selection_frame.place(relx=0.5, rely=0.45, anchor=CENTER, width=400, height=250)
-    
-    Label(selection_frame, text="Welcome!", font=("Arial", 20), bg="white").pack(pady=10)
-    Button(selection_frame, text="Login", command=show_login_section, font=("Arial", 16), bg="blue", fg="white").pack(pady=5)
-    Button(selection_frame, text="Sign Up", command=show_signup_section, font=("Arial", 16), bg="green", fg="white").pack(pady=5)
+    def create_widgets(self):
+        # Title
+        title_label = tk.Label(self.content_frame, text="Admit Information", 
+                              font=("Arial", 14, "bold"), bg="white")
+        title_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        
+        # Main container
+        container = tk.Frame(self.content_frame, bg="white")
+        container.grid(row=1, column=0, sticky='nsew')
+        
+        # Left side input frame
+        input_frame = tk.Frame(container, bg="white")
+        input_frame.grid(row=0, column=0, padx=5, sticky='nw')
+        
+        # Entry fields
+        labels = ['ID:', 'Name:', 'Gender:', 'Phone:', 'Address:', 'Age:', 
+                 'Disease:', 'Blood Group:', 'Check In:', 'Room Number:', 
+                 'Doctors:', 'Check Out:', 'Price:']
+        
+        # Create labels and entries
+        for i, label in enumerate(labels):
+            tk.Label(input_frame, text=label, bg="white", 
+                    font=("Arial", 10)).grid(row=i, column=0, padx=3, pady=2, sticky='w')
+            
+            if label == 'Gender:':
+                self.gender_combo = ttk.Combobox(input_frame, 
+                                               values=['Male', 'Female', 'Other'], 
+                                               width=25)
+                self.gender_combo.grid(row=i, column=1, padx=3, pady=2)
+            elif label == 'Blood Group:':
+                self.blood_group_combo = ttk.Combobox(input_frame,
+                                              values=['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+                                              width=25)
+                self.blood_group_combo.grid(row=i, column=1, padx=3, pady=2)
+            else:
+                entry = tk.Entry(input_frame, width=28)
+                entry.grid(row=i, column=1, padx=3, pady=2)
+                
+                if label == 'ID:':
+                    self.id_entry = entry
+                elif label == 'Name:':
+                    self.name_entry = entry
+                elif label == 'Phone:':
+                    self.phone_entry = entry
+                elif label == 'Address:':
+                    self.address_entry = entry
+                elif label == 'Age:':
+                    self.age_entry = entry
+                elif label == 'Disease:':
+                    self.disease_entry = entry
+                elif label == 'Check In:':
+                    self.check_in_entry = entry
+                elif label == 'Room Number:':
+                    self.room_number_entry = entry
+                elif label == 'Doctors:':
+                    self.doctors_entry = entry
+                elif label == 'Check Out:':
+                    self.check_out_entry = entry
+                elif label == 'Price:':
+                    self.price_entry = entry
 
-# Function to display the login section
-def show_login_section():
-    global entry_username, entry_password
-    for widget in win.winfo_children():
-        if isinstance(widget, Frame):
-            widget.destroy()
-    
-    login_frame = Frame(win, bg="white", bd=5, relief="ridge")
-    login_frame.place(relx=0.5, rely=0.45, anchor=CENTER, width=400, height=350)  # Increased height for checkbox
-    
-    # Adjusting the layout to be side-by-side using grid
-    Label(login_frame, text="Username:", font=("Arial", 14), bg="white").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-    entry_username = Entry(login_frame, font=("Arial", 14))
-    entry_username.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-    
-    Label(login_frame, text="Password:", font=("Arial", 14), bg="white").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-    entry_password = Entry(login_frame, font=("Arial", 14), show="*")
-    entry_password.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
-    
-    # Add show password checkbox
-    show_pass_var = BooleanVar()
-    Checkbutton(login_frame, text="Show Password", variable=show_pass_var, 
-                command=lambda: toggle_password(entry_password, show_pass_var),
-                bg="white", font=("Arial", 10)).grid(row=2, column=0, columnspan=2, pady=5)
-    
-    Button(login_frame, text="Login", command=login, font=("Arial", 16), bg="blue", fg="white").grid(row=3, column=0, columnspan=2, pady=10)
-    Button(login_frame, text="Back", command=show_selection_section, font=("Arial", 12), bg="white", fg="blue").grid(row=4, column=0, columnspan=2, pady=10)
-
-# Function to display the signup section
-def show_signup_section():
-    global entry_fname, entry_lname, entry_phone, entry_signup_username, entry_create_password, entry_confirm_password
-    for widget in win.winfo_children():
-        if isinstance(widget, Frame):
-            widget.destroy()
-    
-    signup_frame = Frame(win, bg="white", bd=5, relief="ridge")
-    signup_frame.place(relx=0.5, rely=0.45, anchor=CENTER, width=400, height=500)  # Increased height for checkboxes
-    
-    # Adjusting the layout to be side-by-side using grid
-    Label(signup_frame, text="First Name:", font=("Arial", 12), bg="white").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-    entry_fname = Entry(signup_frame, font=("Arial", 12))
-    entry_fname.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-    
-    Label(signup_frame, text="Last Name:", font=("Arial", 12), bg="white").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-    entry_lname = Entry(signup_frame, font=("Arial", 12))
-    entry_lname.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
-    
-    Label(signup_frame, text="Phone Number:", font=("Arial", 12), bg="white").grid(row=2, column=0, padx=10, pady=10, sticky="w")
-    entry_phone = Entry(signup_frame, font=("Arial", 12))
-    entry_phone.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
-    
-    Label(signup_frame, text="Username:", font=("Arial", 12), bg="white").grid(row=3, column=0, padx=10, pady=10, sticky="w")
-    entry_signup_username = Entry(signup_frame, font=("Arial", 12))
-    entry_signup_username.grid(row=3, column=1, padx=10, pady=10, sticky="ew")
-    
-    Label(signup_frame, text="Create Password:", font=("Arial", 12), bg="white").grid(row=4, column=0, padx=10, pady=10, sticky="w")
-    entry_create_password = Entry(signup_frame, font=("Arial", 12), show="*")
-    entry_create_password.grid(row=4, column=1, padx=10, pady=10, sticky="ew")
-    
-    # Add show password checkbox for create password
-    show_create_pass_var = BooleanVar()
-    Checkbutton(signup_frame, text="Show Password", variable=show_create_pass_var,
-                command=lambda: toggle_password(entry_create_password, show_create_pass_var),
-                bg="white", font=("Arial", 10)).grid(row=5, column=0, columnspan=2, pady=5)
-    
-    Label(signup_frame, text="Confirm Password:", font=("Arial", 12), bg="white").grid(row=6, column=0, padx=10, pady=10, sticky="w")
-    entry_confirm_password = Entry(signup_frame, font=("Arial", 12), show="*")
-    entry_confirm_password.grid(row=6, column=1, padx=10, pady=10, sticky="ew")
-    
-    # Add show password checkbox for confirm password
-    show_confirm_pass_var = BooleanVar()
-    Checkbutton(signup_frame, text="Show Password", variable=show_confirm_pass_var,
-                command=lambda: toggle_password(entry_confirm_password, show_confirm_pass_var),
-                bg="white", font=("Arial", 10)).grid(row=7, column=0, columnspan=2, pady=5)
-    
-    Button(signup_frame, text="Sign Up", command=signup, font=("Arial", 16), bg="green", fg="white").grid(row=8, column=0, columnspan=2, pady=10)
-    Button(signup_frame, text="Back", command=show_selection_section, font=("Arial", 12), bg="white", fg="blue").grid(row=9, column=0, columnspan=2, pady=10)
-
-# Create main window
-win = Tk()
-win.title("System")
-
-# Load background image
-bg_image = PhotoImage(file="background.png")
-win.geometry(f"{bg_image.width()}x{bg_image.height()}")
-
-bg_label = Label(win, image=bg_image)
-bg_label.place(relwidth=1, relheight=1)
-
-# Load and place the logo in the top-left corner
-logo_image = PhotoImage(file="logo.png")  # Ensure correct path
-logo_label = Label(win, image=logo_image, bg="white")
-logo_label.place(x=10, y=10)
-
-win.bind("<Return>", show_selection_section)
-
-win.mainloop()
+        # Buttons frame
+        button_frame = tk.Frame(container, bg="white")
+        button_frame.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        
+        tk.Button(button_frame, text="Add", command=self.add_admit, 
+                  width=8, bg="#4CAF50", fg="white").grid(row=0, column=0, padx=3)
+        tk.Button(button_frame, text="Update", command=self.update_admit, 
+                  width=8, bg="#2196F3", fg="white").grid(row=0, column=1, padx=3)
+        tk.Button(button_frame, text="Delete", command=self.delete_admit, 
+                  width=8, bg="#f44336", fg="white").grid(row=0, column=2, padx=3)
+        
+        # Treeview frame
+        tree_frame = tk.Frame(container, bg="white")
+        tree_frame.grid(row=0, column=1, rowspan=2, padx=5, pady=5, sticky='nsew')
+        
+        # Scrollbar
+        tree_scroll = ttk.Scrollbar(tree_frame)
+        tree_scroll.pack(side='right', fill='y')
+        
+        # Treeview
+        columns = ('ID', 'Name', 'Gender', 'Phone', 'Address', 'Age', 
+                  'Disease', 'Blood Group', 'Check In', 'Room Number', 
+                  'Doctors', 'Check Out', 'Price')
+        
+        self.tree = ttk.Treeview(tree_frame, 
+            columns=columns,
+            show='headings', 
+            yscrollcommand=tree_scroll.set,
+            height=25)
+        
+        tree_scroll.config(command=self.tree.yview)
+        
+        # Column settings
+        widths = [30, 50, 50, 50, 60, 40, 60, 70, 70, 60, 60, 60, 50]
+        
+        for col, width in zip(columns, widths):
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=width)
+        
+        self.tree.pack(side='left', fill='both', expand=True)
+        
+        # Configure grid weights
+        container.grid_columnconfigure(1, weight=1)
+        self.content_frame.grid_columnconfigure(0, weight=1)
+        self.content_frame.grid_rowconfigure(1, weight=1)
+        
+        # Display initial records
+        self.display_records()
